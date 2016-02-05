@@ -1,0 +1,244 @@
+// ====== ME FILE AUTOGEN grid.h ======
+typedef struct me_grid_t 
+{
+	uint16_t ref_x; // right bottom point location
+	uint16_t ref_y; // right bottom point location
+	int16_t size_x; // grid size
+	int16_t size_y; // grid size
+	uint32_t khl; // coeff binding distance and pixels
+	int8_t div_odd_y; // scale division height
+	int8_t div_even_y; // scale division height
+	int8_t mantissa_offset_x_onedigit; // offset (from division mark) if number has one digit
+	int8_t mantissa_offset_x_twodigit; // offset (from division mark) if number has two digits
+	int8_t mantissa_offset_y;
+	int16_t exponent_offset_x; // (from REF point)
+	int16_t exponent_offset_y; // (from REF point)
+	int8_t erase_ref_x; // erase region ref point corner margin
+	int8_t erase_ref_y; // erase region ref point corner margin
+	int8_t erase_antiref_x; // erase region anti-ref point corner margin
+	int8_t erase_antiref_y; // erase region anti-ref point corner margin
+	INDIRECT_CALL(void (*line_draw)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+	INDIRECT_CALL(void (*number_draw)(uint16_t x, uint16_t y, int8_t num));
+	INDIRECT_CALL(void (*erase)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+} me_grid_t;
+
+// --- ME GENERATE GRID ---
+#define %(NAME)s_REFX %(REFX)s
+#define %(NAME)s_REFY %(REFY)s
+#define %(NAME)s_SIZEX %(SIZEX)s
+#define %(NAME)s_SIZEY %(SIZEY)s
+#define %(NAME)s_KHL %(KHL)s
+#define %(NAME)s_DIVODDSIZEY %(DIVODDSIZEY)s
+#define %(NAME)s_DIVEVENSIZEY %(DIVEVENSIZEY)s
+#define %(NAME)s_MANTISSAOFFSETX1D %(MANTISSAOFFSETX1D)s
+#define %(NAME)s_MANTISSAOFFSETX2D %(MANTISSAOFFSETX2D)s
+#define %(NAME)s_MANTISSAOFFSETY %(MANTISSAOFFSETY)s
+#define %(NAME)s_EXPONENTOFFSETX %(EXPONENTOFFSETX)s
+#define %(NAME)s_EXPONENTOFFSETY %(EXPONENTOFFSETY)s
+#define %(NAME)s_ERASEMARGINREFX %(ERASEMARGINREFX)s
+#define %(NAME)s_ERASEMARGINREFY %(ERASEMARGINREFY)s
+#define %(NAME)s_ERASEMARGINANTIREFX %(ERASEMARGINANTIREFX)s
+#define %(NAME)s_ERASEMARGINANTIREFY %(ERASEMARGINANTIREFY)s
+// --- ME GENERATE END ---
+
+INDIRECT_CALL(void grid_display(uint8_t exponent, uint8_t mantissa, int16_t base_height, me_grid_t *grid));
+INDIRECT_CALL(void number_draw_centered(uint16_t x, uint16_t y, uint8_t num, me_grid_t *grid));
+INDIRECT_CALL(void grid_draw(uint8_t zoom, me_grid_t *grid));
+
+
+// ====== ME FILE AUTOGEN grid.c ======
+#include "grid.h"
+#include "grid_primitives.h"
+
+// MATLAB: round(1./(1:0.125:5).*256)(2:end)
+PLACE_TO_PGM(uint8_t grid_coeffs[32]) = \
+{\
+	228,  205,  186,  171,  158,  146,  137,  128,\
+	120,  114,  108,  102,   98,   93,   89,   85,\
+	 82,   79,   76,   73,   71,   68,   66,   64,\
+	 62,   60,   59,   57,   55,   54,   53,   51 \
+};
+
+// --- ME GENERATE GRID ---
+PLACE_TO_PGM(const me_grid_t %(NAME)s_rf_grid) = 
+{
+	%(NAME)s_REFX,
+	%(NAME)s_REFY,
+	%(NAME)s_SIZEX,
+	%(NAME)s_SIZEY,
+	%(NAME)s_KHL,
+	%(NAME)s_DIVODDSIZEY,
+	%(NAME)s_DIVEVENSIZEY,
+	%(NAME)s_MANTISSAOFFSETX1D,
+	%(NAME)s_MANTISSAOFFSETX2D,
+	%(NAME)s_MANTISSAOFFSETY,
+	%(NAME)s_EXPONENTOFFSETX,
+	%(NAME)s_EXPONENTOFFSETY,
+	%(NAME)s_ERASEMARGINREFX,
+	%(NAME)s_ERASEMARGINREFY,
+	%(NAME)s_ERASEMARGINANTIREFX,
+	%(NAME)s_ERASEMARGINANTIREFY,
+	&%(NAME)s_rf_grid_line_draw,
+	&%(NAME)s_rf_grid_number_draw,
+	&%(NAME)s_rf_grid_erase
+};
+// --- ME GENERATE END ---
+
+INDIRECT_CALL(void grid_display(uint8_t exponent, uint8_t mantissa, int16_t base_height, me_grid_t *grid))
+{
+	uint8_t i,j;
+	// draw ground line
+	(grid->line_draw)(grid->ref_x, grid->ref_y, grid->ref_x+grid->size_x, grid->ref_y);
+	// draw exponent
+	(grid->number_draw)( \
+	 grid->ref_x + grid->exponent_offset_x, \
+	 grid->ref_y + grid->exponent_offset_y, \
+	 -((int8_t)exponent) \
+	);
+	// draw stadias
+	(grid->line_draw)( \
+	 grid->ref_x, \
+	 grid->ref_y + base_height, \
+	 grid->ref_x, \
+	 grid->ref_y + base_height + grid->div_even_y \
+	);
+	number_draw_centered( \
+	 grid->ref_x, \
+	 grid->ref_y + base_height + grid->div_even_y, \
+	 mantissa, \
+	 grid \
+	);
+	for (i=0;i<4;i++)
+	{
+		for (j=1;j<=8;j++)
+		{
+			if(j!=3 && j!=6 /*&& j!=2 && j!=5*/) // draw head line
+			{
+				(grid->line_draw)( \
+				 grid->ref_x+grid->size_x*(i*8+j-1)/32, \
+				 grid->ref_y+((i==0&&j==1)? (base_height) : \
+				  (grid_coeffs[i*8+j-2]*(int32_t)base_height/256)), \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256 \
+				);
+			}
+			if(j==8)
+			{
+				(grid->line_draw)( \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256, \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256+grid->div_even_y \
+				);
+				number_draw_centered( \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256 \
+				  + grid->div_even_y, \
+				 mantissa*(i+2), \
+				 grid \
+				);
+			}
+			if(j==4)
+			{
+				(grid->line_draw)( \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256, \
+				 grid->ref_x+grid->size_x*(i*8+j)/32, \
+				 grid->ref_y+grid_coeffs[i*8+j-1]*(int32_t)base_height/256 \
+				  + grid->div_odd_y \
+				);
+			}
+		}
+	}
+}
+
+INDIRECT_CALL(void number_draw_centered(uint16_t x, uint16_t y, uint8_t num, me_grid_t *grid))
+{
+	if (num < 10)
+		x += grid->mantissa_offset_x_onedigit;
+	else
+		x += grid->mantissa_offset_x_twodigit;
+	y += grid->mantissa_offset_y;
+	(grid->number_draw)(x, y, num);
+}
+
+INDIRECT_CALL(void grid_draw(uint8_t zoom, me_grid_t *grid))
+{
+	uint16_t ref_distance;
+	uint16_t ref_height;
+	int16_t base_height;
+	uint8_t mantissa;
+	uint8_t exponent;
+	uint16_t exp_mul;
+	if (zoom==0)
+	{
+		(grid->erase)(\
+		 grid->ref_x+grid->erase_ref_x, \
+		 grid->ref_y+grid->erase_ref_y, \
+		 grid->ref_x+grid->size_x+grid->erase_antiref_x, \
+		 grid->ref_y+grid->size_y+grid->erase_antiref_y \
+		);
+	}
+	else
+	{
+		ref_height = ((grid->size_y) > 0) ? (grid->size_y) : (-(grid->size_y));
+		ref_distance = (uint32_t)zoom*(grid->khl)/(ref_height);
+		exponent = 0;
+		exp_mul = 1;
+		while(1)
+		{
+			if (exp_mul*1 >= ref_distance)
+			{
+				mantissa = 1;
+				break;
+			}
+			else if (exp_mul*2 >= ref_distance)
+			{
+				mantissa = 2;
+				break;
+			}
+			else if (exp_mul*5 >= ref_distance)
+			{
+				mantissa = 5;
+				break;
+			}
+			else
+			{
+				exponent++;
+				exp_mul *= 10;
+			}
+		}
+		base_height = (uint32_t)zoom*(grid->khl)/(exp_mul*mantissa);
+		base_height = (grid->size_y > 0) ? (base_height) : (-base_height);
+		grid_display(exponent,mantissa,base_height,grid);
+	}
+}
+
+
+// ====== ME FILE AUTOGEN grid_primitives.h ======
+// --- ME GENERATE GRID ---
+INDIRECT_CALL(void %(NAME)s_rf_grid_line_draw(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+INDIRECT_CALL(void %(NAME)s_rf_grid_number_draw(uint16_t x, uint16_t y, int8_t num));
+INDIRECT_CALL(void %(NAME)s_rf_grid_erase(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE EDITABLE grid_primitives.c ======
+#include "grid_primitives.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE GRID ---
+INDIRECT_CALL(void %(NAME)s_rf_grid_line_draw(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))
+{
+	// ME USER CODE grid %(NAME)s line drawing
+}
+INDIRECT_CALL(void %(NAME)s_rf_grid_number_draw(uint16_t x, uint16_t y, int8_t num))
+{
+	// ME USER CODE grid %(NAME)s number printing
+}
+INDIRECT_CALL(void %(NAME)s_rf_grid_erase(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))
+{
+	// ME USER CODE grid %(NAME)s rectangle erasing
+}
+// --- ME GENERATE END ---
+

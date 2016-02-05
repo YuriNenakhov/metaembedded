@@ -1,0 +1,620 @@
+// --- ME SCRIPT ---
+# PART I: preparing parameters
+for element in self.elements:
+	if element.elem_type == 'MENU1LINE':
+		# building array of menu entries
+		element.menu_entry_names = element.params['ENTRIES'].split(',')
+		element.menu_entries = []
+		for i in range(len(element.menu_entry_names)):
+			for entry in self.elements:
+				if ( entry.elem_type == 'ENTRY' and
+					 entry.elem_name == element.menu_entry_names[i] ):
+					element.menu_entries.append(entry)
+					break
+	elif element.elem_type == 'ENTRY':
+		if 'GROUP' not in element.params:
+			element.params['GROUP'] = '0'
+		# building array of value labels
+		if 'OPTIONS' in element.params:
+			# multi-choice select type
+			element.options = element.params['OPTIONS'].split(',')
+			element.params['MAXVAL'] = str(len(element.options)-1)
+			element.params['INCREM'] = "1"
+			if 'HANDLER' not in element.params:
+				element.params['HANDLER'] = 'SEPARATE'
+			element.params['OPTLEN'] = str(
+						(len(element.options)-1).bit_length() )
+		else:
+			# rangeselect type
+			rangedef = element.params['RANGE'].split(':')
+			element.label = element.params['LABEL']
+			element.params['MAXVAL'] = rangedef[0]
+			element.params['INCREM'] = rangedef[1]
+			if 'HANDLER' not in element.params:
+				element.params['HANDLER'] = 'UNIFIED'
+			element.params['OPTLEN'] = str(
+						int(rangedef[0]).bit_length() )
+	elif 'GUI' in element.elem_type:
+		for elem in self.elements:
+			if ( elem.elem_type == 'MENU1LINE' and
+				 elem.params['GUI'] == element.elem_name ):
+				elem.params['GUITYPE'] = element.elem_type
+				elem.gui = element
+				break
+// --- ME SCRIPT END ---
+
+// --- ME SCRIPT ---
+# PART II: preparing data storage
+for element in self.elements:
+	if element.elem_type == 'MENU1LINE':
+		element.groups = {'0':'1'}
+		for elem in element.menu_entries:
+			element.groups[elem.params['GROUP']] = '1'
+		offset = len(list(element.groups))
+		element.params['ACTIVEENTRYNUMOFFSET'] = str(offset)
+		length = len(element.menu_entries).bit_length()
+		element.params['ACTIVEENTRYNUMSIZE'] = str(length)
+		for i in range(len(element.menu_entries)):
+			offset += length
+			length = int(element.menu_entries[i].params['OPTLEN'])
+			element.menu_entries[i].params['OPTOFFSET'] = str(offset)
+		offset += length
+		element.params['CONTAINERSIZE'] = offset//8+(offset%8>0)
+		element.params['ACTIVEENTRYNUMMAX'] = str(len(element.menu_entries)-1)
+// --- ME SCRIPT END ---
+
+// --- ME SCRIPT ---
+# PART III: computing geometry
+for base in self.elements:
+	# GUI1
+	if ( base.elem_type == "MENU1LINE" and
+		 base.params['GUITYPE'] == 'GUI1' ):
+		x = int(base.gui.params['X'])
+		base.gui.entry_x1 = []
+		base.gui.entry_x2 = []
+		for i in range(len(base.menu_entries)):
+			base.gui.entry_x1.append(x);
+			sizex = (int(base.gui.params['CHARWIDTHX'])*
+					 int(base.menu_entries[i].params['CHARNUM']) +
+					 int(base.gui.params['TEXTSPACERX']))
+			base.gui.entry_x2.append(x+sizex)
+			x += sizex + 1
+		base.gui.params['X2'] = str(x)
+		base.gui.params['Y2'] = str(int(base.gui.params['Y'])+
+					 int(base.gui.params['SIZEY']))
+// --- ME SCRIPT END ---
+
+
+// ====== ME FILE AUTOGEN menu1line.h ======
+#define MENU_IS_ACTIVE(menu) bits_unpack(menu,0,1)
+#define MENU_SHOW(menu)	bits_pack(menu,0,1,1);menu1l_draw(menu)
+#define MENU_HIDE(menu)	bits_pack(menu,0,1,0);menu1l_draw(menu)
+#define MENU_NEXT(menu)	menu1l_navigate(menu,1)
+#define MENU_PREV(menu)	menu1l_navigate(menu,0)
+#define MENU_INC(menu)	menu1l_set(menu,1)
+#define MENU_DEC(menu)	menu1l_set(menu,0)
+#define MENU_GROUP_ACTIVATE(menu,group) bits_pack(menu,group,1,1)
+#define MENU_GROUP_DEACTIVATE(menu,group) bits_pack(menu,group,1,0)
+
+#define READ_ACTIVE_ENTRY_NUM(menu) bits_unpack(\
+	(menu),\
+	(uint8_t)PGM_READ_8( &((menu)->active_entry_num_offset) ),\
+	(uint8_t)PGM_READ_8( &((menu)->active_entry_num_size) ) )
+#define STORE_ACTIVE_ENTRY_NUM(menu,entry_num) bits_pack(\
+	(menu),\
+	(uint8_t)PGM_READ_8( &((menu)->active_entry_num_offset) ),\
+	(uint8_t)PGM_READ_8( &((menu)->active_entry_num_size) ),\
+	entry_num)
+#define READ_ENTRY_ACTIVE_OPTION(menu,entry) bits_unpack(\
+	(menu),\
+	(uint8_t)PGM_READ_8( &((entry)->active_option_offset) ),\
+	(uint8_t)PGM_READ_8( &((entry)->active_option_size) ))
+#define STORE_ENTRY_ACTIVE_OPTION(menu,entry,option) bits_pack(\
+	(menu),\
+	(uint8_t)PGM_READ_8( &((entry)->active_option_offset) ),\
+	(uint8_t)PGM_READ_8( &((entry)->active_option_size) ),\
+	option)
+#define GET_ENTRY_PTR(menu,entry_num) (me_menu1l_entry_t *)PGM_READ_PTR(\
+	&(((me_menu1l_entry_t **)PGM_READ_PTR( &((menu)->menu_entries) ))[entry_num]));
+
+typedef struct me_menu1l_entry_t
+{
+	uint8_t group;
+	uint8_t active_option_offset;
+	uint8_t active_option_size;
+	uint8_t option_max;
+	uint8_t option_inc;
+	char ** options;
+	INDIRECT_CALL(void (*option_set)(uint8_t option)); // option change handler
+} me_menu1l_entry_t;
+
+typedef struct me_menu1l_t
+{
+	uint8_t * state_container; // menu status data structure
+	uint8_t state_container_size; // in bytes
+	me_menu1l_entry_t **menu_entries;
+	uint8_t entry_num_max;
+	uint8_t active_entry_num_offset; // number of active entry
+	uint8_t active_entry_num_size; // size of active entry number variable
+	void * gui;
+	INDIRECT_CALL(void (*menu_draw)(void * menu));
+} me_menu1l_t;
+
+typedef struct me_menu1l_GUI1_t
+{
+	uint16_t menu_x1; // menu upper left point location
+	uint16_t menu_y1; // menu upper left point location
+	uint16_t menu_x2; // menu lower right point location
+	uint16_t menu_y2; // menu lower right point location
+	uint8_t text_offset_x; // from upper left point of menu entry
+	uint8_t text_offset_y; // from upper left point of menu entry
+	uint16_t * entries_x1; // array of menu entry left point positions
+	uint16_t * entries_x2; // array of menu entry left point positions
+	INDIRECT_CALL(void (*print_text)(uint16_t x, uint16_t y, uint8_t is_active, char *label));
+	INDIRECT_CALL(void (*draw_rectangle)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));	
+	INDIRECT_CALL(void (*clear_rectangle)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));	
+	INDIRECT_CALL(void (*complete_draw)(void));
+} me_menu1l_GUI1_t;
+
+// --- ME GENERATE MENU1LINE ---
+#define %(NAME)s_CONTAINERSIZE %(CONTAINERSIZE)s
+#define %(NAME)s_ACTIVEENTRYNUMMAX %(ACTIVEENTRYNUMMAX)s
+#define %(NAME)s_ACTIVEENTRYNUMOFFSET %(ACTIVEENTRYNUMOFFSET)s
+#define %(NAME)s_ACTIVEENTRYNUMSIZE %(ACTIVEENTRYNUMSIZE)s
+// --- ME GENERATE END ---
+
+// --- ME GENERATE ENTRY ---
+#define %(NAME)s_GROUP %(GROUP)s
+#define %(NAME)s_OPTOFFSET %(OPTOFFSET)s
+#define %(NAME)s_OPTLEN %(OPTLEN)s
+#define %(NAME)s_MAXVAL %(MAXVAL)s
+#define %(NAME)s_INCREM %(INCREM)s
+// --- ME GENERATE END ---
+
+// --- ME GENERATE GUI1 ---
+#define	%(NAME)s_X1 %(X)s
+#define	%(NAME)s_Y1 %(Y)s
+#define	%(NAME)s_X2 %(X2)s
+#define	%(NAME)s_Y2 %(Y2)s
+#define	%(NAME)s_TEXTOFFSETX %(TEXTOFFSETX)s
+#define	%(NAME)s_TEXTOFFSETY %(TEXTOFFSETY)s
+// --- ME GENERATE END ---
+
+void menu1l_draw(me_menu1l_t * menu);
+
+INDIRECT_CALL(void menu1l_navigate(me_menu1l_t * menu, uint8_t dir));
+INDIRECT_CALL(void menu1l_set(me_menu1l_t * menu, uint8_t dir));
+
+INDIRECT_CALL(void GUI1_menu1l_draw(void * menu_p));
+INDIRECT_CALL(void GUI1_menu1l_entry_draw(me_menu1l_t *menu, uint8_t entry_num));
+
+INDIRECT_CALL(uint8_t bits_unpack(me_menu1l_t * menu, uint8_t offset, uint8_t length));
+INDIRECT_CALL(void bits_pack(me_menu1l_t * menu, uint8_t offset, uint8_t length, uint8_t value));
+
+
+// ====== ME FILE AUTOGEN menu1line.c ======
+#include "menu1line.h"
+#include "menu1line_primitives.h"
+#include "menu1line_actions.h"
+
+// --- ME SCRIPT ---
+# menu labels storage
+for element in self.elements:
+	if element.elem_type == 'ENTRY':
+		if 'OPTIONS' in element.params:	
+			for i in range(len(element.options)):
+				self.out += ("PLACE_TO_PGM(char "+
+						element.elem_name+"_option_"+str(i)+
+						"[]) = "+element.options[i]+";\n")
+			self.out += ( "PLACE_TO_PGM(char * "+
+						element.elem_name+"_options[]) = \n{\n")
+			for i in range(len(element.options)):
+				self.out += ("\t&"+
+						element.elem_name+"_option_"+str(i)+",\n")
+			self.out = self.out[:-2]
+			self.out += "\n};\n\n"
+		elif 'LABEL' in element.params:
+			self.out += ("PLACE_TO_PGM(char "+
+						element.elem_name+"_option_0[]) = "+
+						element.label+";\nPLACE_TO_PGM(char * "+
+						element.elem_name+"_options[]) = \n{\n"+
+						"\t&"+
+						element.elem_name+"_option_0,\n\t(char *)0\n};\n\n")
+// --- ME SCRIPT END ---
+
+// --- ME SCRIPT ---
+# GUI1 elements location
+for element in self.elements:
+	if element.elem_type == 'GUI1':
+		self.out += ("PLACE_TO_PGM(uint16_t "+element.elem_name+
+					"_entries_x1[]) =\n{\n")
+		for x1 in element.entry_x1:
+			self.out += "\t"+str(x1)+",\n"
+		self.out = self.out[:-2]
+		self.out += "\n};\n"
+		self.out += ("PLACE_TO_PGM(uint16_t "+element.elem_name+
+					"_entries_x2[]) =\n{\n")
+		for x2 in element.entry_x2:
+			self.out += "\t"+str(x2)+",\n"
+		self.out = self.out[:-2]
+		self.out += "\n};\n"
+// --- ME SCRIPT END ---
+
+// --- ME GENERATE GUI1 ---
+PLACE_TO_PGM(me_menu1l_GUI1_t %(NAME)s_gui) =
+{
+	%(NAME)s_X1,
+	%(NAME)s_Y1,
+	%(NAME)s_X2,
+	%(NAME)s_Y2,
+	%(NAME)s_TEXTOFFSETX,
+	%(NAME)s_TEXTOFFSETY,
+	&%(NAME)s_entries_x1,
+	&%(NAME)s_entries_x2,
+	%(NAME)s_print_text,
+	%(NAME)s_draw_rectangle,
+	%(NAME)s_clear_rectangle,
+	%(NAME)s_complete_draw
+};
+// --- ME GENERATE END ---
+
+// --- ME GENERATE ENTRY ---
+PLACE_TO_PGM(const me_menu1l_entry_t %(NAME)s_menu_entry) = 
+{
+	%(NAME)s_GROUP,
+	%(NAME)s_OPTOFFSET,
+	%(NAME)s_OPTLEN,
+	%(NAME)s_MAXVAL,
+	%(NAME)s_INCREM,
+	%(NAME)s_options,
+	%(NAME)s_option_set
+};
+// --- ME GENERATE END ---
+
+// --- ME SCRIPT ---
+# menu structure definition
+for element in self.elements:
+	if element.elem_type == 'MENU1LINE':
+		self.out += ( "PLACE_TO_PGM(const me_menu1l_entry_t *"+
+				element.elem_name+"_menu_entries[]) = \n{\n" )
+		for i in range(len(element.menu_entry_names)):
+			self.out += ( "\t&"+
+				element.menu_entry_names[i]+"_menu_entry,\n" )
+		self.out = self.out[:-2]
+		self.out += "\n};\n"
+// --- ME SCRIPT END ---
+
+// --- ME GENERATE MENU1LINE ---
+volatile uint8_t %(NAME)s_menu_state[%(CONTAINERSIZE)s];
+PLACE_TO_PGM(const me_menu1l_t %(NAME)s_menu) =
+{
+	%(NAME)s_menu_state, 
+	%(NAME)s_CONTAINERSIZE,
+	&%(NAME)s_menu_entries,
+	%(NAME)s_ACTIVEENTRYNUMMAX,
+	%(NAME)s_ACTIVEENTRYNUMOFFSET,
+	%(NAME)s_ACTIVEENTRYNUMSIZE,
+	(void *)&%(GUI)s_gui,
+	&%(GUITYPE)s_menu1l_draw,
+};
+// --- ME GENERATE END ---
+
+void menu1l_draw(me_menu1l_t * menu)
+{
+	INDIRECT_CALL(void (*draw)(me_menu1l_t * menu));
+	draw = PGM_READ_PTR( &(menu->menu_draw));
+	(draw)(menu);
+}
+
+INDIRECT_CALL(void bits_pack(me_menu1l_t * menu, uint8_t offset, uint8_t length, uint8_t value))
+{
+	uint16_t mask;
+	uint8_t * container;
+	uint8_t quot;
+	uint8_t rem;
+
+	mask = (((uint16_t)1)<<length)-1;
+	container = (uint8_t *)PGM_READ_PTR( &(menu->state_container) );
+	quot = offset / 8;
+	rem = offset % 8;
+	
+	mask <<= rem;
+	mask = ~mask;
+	mask &= ( (( (uint16_t)container[quot+1] )<<8) |  container[quot] );
+	mask |= ((uint16_t)value)<<rem;
+	container[quot] = (uint8_t)mask;
+	container[quot+1] = (uint8_t)(mask>>8);
+}
+
+INDIRECT_CALL(uint8_t bits_unpack(me_menu1l_t * menu, uint8_t offset, uint8_t length))
+{
+	uint16_t mask;
+	uint8_t * container;
+	uint8_t quot;
+	uint8_t rem;
+	uint16_t data_chunk;
+
+	mask = (((uint16_t)1)<<length)-1;
+	container = (uint8_t *)PGM_READ_PTR( &(menu->state_container) );
+	quot = offset / 8;
+	rem = offset % 8;
+
+	data_chunk = (uint16_t)(container[quot])>>rem;
+	data_chunk |= (((uint16_t)container[quot+1])<<(8-rem));
+	return (uint8_t)(data_chunk & mask);
+}
+
+INDIRECT_CALL(void menu1l_navigate(me_menu1l_t *menu, uint8_t dir))
+{
+	uint8_t active_entry_num;
+	uint8_t entry_num_max;
+	uint8_t current_entry_group;
+	me_menu1l_entry_t * current_entry;
+
+	active_entry_num = READ_ACTIVE_ENTRY_NUM(menu);
+	entry_num_max = PGM_READ_8( &(menu->entry_num_max) );
+
+	// searching for next element that is in active group
+	// if all groups are inactive and there's no elements in '0' (default) group,
+	// it'll be an infinite loop
+	do
+	{
+		if (dir == 1)
+		{
+			// navigate next
+			active_entry_num = (active_entry_num < entry_num_max ) ? active_entry_num+1 : 0 ;
+		}
+		else
+		{
+			// navigate prev
+			active_entry_num = (active_entry_num > 0 ) ? active_entry_num-1 : entry_num_max ;
+		}
+
+		current_entry = (me_menu1l_entry_t *)GET_ENTRY_PTR(menu,active_entry_num);
+		current_entry_group = (uint8_t) PGM_READ_8( &(current_entry->group) );
+	}
+	while( (current_entry_group!=0) && (!(bits_unpack(menu,current_entry_group,1)) ));
+	STORE_ACTIVE_ENTRY_NUM(menu,active_entry_num);
+	MENU_SHOW(menu);
+}
+
+INDIRECT_CALL(void menu1l_set(me_menu1l_t *menu, uint8_t dir))
+{
+	uint8_t active_entry_num;
+	me_menu1l_entry_t * active_entry;
+	uint8_t active_option;
+	uint8_t option_max;
+	uint8_t option_inc;
+	INDIRECT_CALL(void (*option_set)(uint8_t option)); 
+
+	active_entry_num = READ_ACTIVE_ENTRY_NUM(menu);
+	active_entry = GET_ENTRY_PTR(menu,active_entry_num);
+	active_option = READ_ENTRY_ACTIVE_OPTION(menu,active_entry);
+	option_max = PGM_READ_8( &(active_entry->option_max) );
+
+	if 	( \
+			( \
+				( active_option == option_max ) && \
+				( dir == 1 ) \
+			) || \
+			( \
+				( active_option == 0 ) && \
+				( dir == 0 ) \
+			) \
+		)
+	{
+		return;
+	}
+	else 
+	{
+		option_inc = PGM_READ_8( &(active_entry->option_inc) );
+		if (dir == 1) // fw
+		{
+			if (option_max-active_option > option_inc)
+			{
+				active_option += option_inc;
+			}
+			else
+			{
+				active_option = option_max;
+			}
+		}
+		else // bw
+		{
+			if (active_option > option_inc)
+			{
+				active_option -= option_inc;
+			}
+			else
+			{
+				active_option = 0;
+			}
+		}
+		STORE_ENTRY_ACTIVE_OPTION(menu,active_entry,active_option);
+		menu1l_draw(menu);
+		option_set = (void (*)(uint8_t option))PGM_READ_PTR( &(active_entry->option_set) );
+		(option_set)(active_option);
+	}
+}
+
+INDIRECT_CALL(void GUI1_menu1l_draw(void * menu_p))
+{
+	me_menu1l_t * menu;
+	me_menu1l_GUI1_t * gui;
+	INDIRECT_CALL(void (*clear_rectangle)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));	
+	INDIRECT_CALL(void (*complete_draw)(void));
+	uint8_t entry_num;
+	uint8_t state;
+	static uint8_t prev_state = 0;
+	uint8_t active_entry_num;
+	static uint8_t prev_active_entry_num = 0;
+
+	menu = (me_menu1l_t *)menu_p;
+	gui = (me_menu1l_GUI1_t *)PGM_READ_PTR(&(menu->gui));
+	clear_rectangle = (void (*)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)) \
+		PGM_READ_PTR( &(gui->clear_rectangle) );
+	complete_draw = (void (*)(void))PGM_READ_PTR( &(gui->complete_draw) );
+	state = bits_unpack(menu,0,PGM_READ_8( &(menu->active_entry_num_offset) ) );
+	active_entry_num = bits_unpack(	menu, \
+		PGM_READ_8( &(menu->active_entry_num_offset) ), \
+		PGM_READ_8( &(menu->active_entry_num_size) ) );
+
+	if (MENU_IS_ACTIVE(menu))
+	{
+		if (state != prev_state) // global menu change, full redraw
+		{
+			// menu is active, drawing entries
+			for (entry_num=0; entry_num<=PGM_READ_8( &(menu->entry_num_max) ); entry_num++)
+			{
+				GUI1_menu1l_entry_draw(menu,entry_num);
+			}	
+		}
+		else
+		{
+			GUI1_menu1l_entry_draw(menu,active_entry_num);
+			if (prev_active_entry_num != active_entry_num)
+			{
+				GUI1_menu1l_entry_draw(menu,prev_active_entry_num);
+			}
+		}
+	}
+	else
+	{
+		if ((state&0x1) != (prev_state&0x1))
+		{ 
+			// clear - draw blank rectangle
+			(clear_rectangle)(\
+				PGM_READ_16(&(gui->menu_x1)), \
+				PGM_READ_16(&(gui->menu_y1)), \
+				PGM_READ_16(&(gui->menu_x2)), \ 
+				PGM_READ_16(&(gui->menu_y2)) );
+		}
+	}
+	prev_state = state;
+	prev_active_entry_num = active_entry_num;
+	(complete_draw)();
+}
+
+INDIRECT_CALL(void GUI1_menu1l_entry_draw(me_menu1l_t * menu, uint8_t entry_num))
+{
+	me_menu1l_entry_t * entry;
+	uint8_t group;
+	me_menu1l_GUI1_t * gui;
+	INDIRECT_CALL(void (*clear_rectangle)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));	
+	INDIRECT_CALL(void (*draw_rectangle)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));	
+	INDIRECT_CALL(void (*print_text)(uint16_t x, uint16_t y, uint8_t is_active, char *label));
+	uint8_t is_active;
+	uint8_t option_num;
+
+	entry = GET_ENTRY_PTR(menu,entry_num);
+	group = (uint8_t) PGM_READ_8( &(entry->group) );
+	gui = (me_menu1l_GUI1_t *)PGM_READ_PTR( &(menu->gui) );
+	draw_rectangle = (void (*)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))\
+		PGM_READ_PTR( &(gui->draw_rectangle) );
+	clear_rectangle = (void (*)(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))\
+		PGM_READ_PTR( &(gui->clear_rectangle) );
+	print_text = (void (*)(uint16_t x, uint16_t y, uint8_t is_active, char *label))\
+		PGM_READ_PTR( &(gui->print_text) );
+
+	// if group is active
+	if (bits_unpack(menu,group,1))
+	{
+		// draw background rectangle
+		(draw_rectangle)( \
+			PGM_READ_16(&(((uint16_t *)PGM_READ_PTR(&(gui->entries_x1)))[entry_num])), \
+			PGM_READ_16(&(gui->menu_y1)), \
+			PGM_READ_16(&(((uint16_t *)PGM_READ_PTR(&(gui->entries_x2)))[entry_num])), \
+			PGM_READ_16(&(gui->menu_y2)) );
+		// checking if entry is active
+		if ( entry_num == READ_ACTIVE_ENTRY_NUM(menu) )
+		{
+			is_active = 1;
+		}
+		else
+		{
+			is_active = 0;
+		}
+		// checking if entry has common label for all options
+		if ( (char *)PGM_READ_PTR(&(((char **)PGM_READ_PTR(&(entry->options)))[1])) == (char *)0)
+		{
+			option_num = 0;
+		}
+		else
+		{
+			option_num = READ_ENTRY_ACTIVE_OPTION(menu,entry);
+		}
+		// printing text
+		(print_text)( \
+			(uint16_t)PGM_READ_16(&(((uint16_t *)PGM_READ_PTR(&(gui->entries_x1)))[entry_num])) \
+				+ (uint8_t)PGM_READ_8(&(gui->text_offset_x)), \
+			(uint16_t)PGM_READ_16(&(gui->menu_y1)) \
+				+ (uint8_t)PGM_READ_8(&(gui->text_offset_y)), \
+			is_active, (char *)PGM_READ_PTR( &(((char **)PGM_READ_PTR(&(entry->options)))[option_num]) ) );
+	}
+	// group is inactive, clear entry
+	else 
+	{
+		// draw blank rectangle
+		(clear_rectangle)( \
+			PGM_READ_16(&(((uint16_t *)PGM_READ_PTR(&(gui->entries_x1)))[entry_num])), \
+			PGM_READ_16(&(gui->menu_y1)), \
+			PGM_READ_16(&(((uint16_t *)PGM_READ_PTR(&(gui->entries_x2)))[entry_num])), \
+			PGM_READ_16(&(gui->menu_y2)) );
+	}
+}
+
+
+// ====== ME FILE EDITABLE menu1line_primitives.h ======
+#include "menu1line.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE GUI1 ---
+INDIRECT_CALL(void %(NAME)s_print_text(uint16_t x, uint16_t y, uint8_t is_active, char *label));
+INDIRECT_CALL(void %(NAME)s_draw_rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+INDIRECT_CALL(void %(NAME)s_clear_rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2));
+INDIRECT_CALL(void %(NAME)s_complete_draw(void));
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE EDITABLE menu1line_primitives.c ======
+#include "menu1line.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE GUI1 ---
+INDIRECT_CALL(void %(NAME)s_print_text(uint16_t x, uint16_t y, uint8_t is_active, char *label))
+{
+	// ME USER CODE %(NAME)s text printing function
+}
+INDIRECT_CALL(void %(NAME)s_draw_rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))
+{
+	// ME USER CODE %(NAME)s draw rectangle function
+}
+INDIRECT_CALL(void %(NAME)s_clear_rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2))
+{
+	// ME USER CODE %(NAME)s clear rectangle function
+}
+INDIRECT_CALL(void %(NAME)s_complete_draw(void))
+{
+	// ME USER CODE %(NAME)s draw finish and results display function
+}
+// --- ME GENERATE END ---
+	
+
+// ====== ME FILE AUTOGEN menu1line_actions.h ======
+#include "menu1line.h"
+
+// --- ME GENERATE ENTRY ---
+INDIRECT_CALL(void %(NAME)s_option_set(uint8_t option));
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE EDITABLE menu1line_actions.c ======
+#include "menu1line.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE ENTRY ---
+INDIRECT_CALL(void %(NAME)s_option_set(uint8_t option))
+{
+	// ME USER CODE entry %(NAME)s option set
+}
+// --- ME GENERATE END ---

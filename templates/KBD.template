@@ -1,0 +1,326 @@
+// --- ME SCRIPT ---
+# computing fsm counter values
+for element in self.elements:
+	if element.elem_type == 'BUTTON':
+		antirattle = int(element.params['ANTIRATTLE'])
+		longpress = int(element.params['LONGPRESS'])
+		longinactivity = int(element.params['LONGINACTIVITY'])
+		element.params['LVL_INITIAL'] = str( longpress + 1 )
+		element.params['LVL_RELIABLE_PRESS'] = str( longpress + 1 - antirattle )
+		element.params['LVL_RELIABLE_RELEASE'] = str( longpress + 1 + antirattle )
+		element.params['LVL_MAX'] = str( longpress + longinactivity + 2 )
+// --- ME SCRIPT END ---
+
+
+// ====== ME FILE AUTOGEN kbd.h ======
+#define ENCODER_CHA_BIT 0
+#define ENCODER_CHB_BIT 1
+#define DIRECTION_BIT   4
+#define STATE_MASK ((1<<DIRECTION_BIT)-1)
+#define DIR_MASK = (~STATE_MASK)
+#define CHA_OFF_CHB_OFF ((0<<ENCODER_CHA_BIT)|(0<<ENCODER_CHB_BIT))
+#define CHA_OFF_CHB_ON  ((0<<ENCODER_CHA_BIT)|(1<<ENCODER_CHB_BIT))
+#define CHA_ON_CHB_OFF  ((1<<ENCODER_CHA_BIT)|(0<<ENCODER_CHB_BIT))
+#define CHA_ON_CHB_ON   ((1<<ENCODER_CHA_BIT)|(1<<ENCODER_CHB_BIT))
+#define ENCODER_RESET 0
+#define ENCODER_FW_1  1
+#define ENCODER_FW_2  2
+#define ENCODER_FW_3  3
+#define ENCODER_BW_1  4
+#define ENCODER_BW_2  5
+#define ENCODER_BW_3  6
+
+typedef struct me_encoder_t
+{
+	uint8_t * fsm;
+	INDIRECT_CALL(uint8_t (*cha_active)(void));
+	INDIRECT_CALL(uint8_t (*chb_active)(void));
+	INDIRECT_CALL(void (*fw_detected)(void));
+	INDIRECT_CALL(void (*bw_detected)(void));
+} me_encoder_t;
+
+typedef struct me_button_t
+{
+	uint16_t * fsm;
+	uint16_t lvl_initial;
+	uint16_t lvl_reliable_press;
+	uint16_t lvl_reliable_release;
+	uint16_t lvl_max;
+	INDIRECT_CALL(uint8_t (*input_active)(void));
+	INDIRECT_CALL(void (*press_detected)(void));
+	INDIRECT_CALL(void (*release_detected)(void));
+	INDIRECT_CALL(void (*longpress_detected)(void));
+	INDIRECT_CALL(void (*longinactivity_detected)(void));
+} me_button_t;
+
+void kbd_init(void);
+void kbd_scan(void);
+void encoder_scan(me_encoder_t * encoder);
+void button_scan(me_button_t * button);
+
+// --- ME GENERATE BUTTON ---
+#define %(NAME)s_LVL_INITIAL %(LVL_INITIAL)s
+#define %(NAME)s_LVL_RELIABLE_PRESS %(LVL_RELIABLE_PRESS)s
+#define %(NAME)s_LVL_RELIABLE_RELEASE %(LVL_RELIABLE_RELEASE)s
+#define %(NAME)s_LVL_MAX %(LVL_MAX)s
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE AUTOGEN kbd.c ======
+#include "kbd.h"
+#include "kbd_hw.h"
+#include "kbd_actions.h"
+
+// --- ME GENERATE ENCODER ---
+uint8_t %(NAME)s_encoder_fsm = ENCODER_RESET;
+PLACE_TO_PGM(const me_encoder_t %(NAME)s_encoder) =
+{
+	&%(NAME)s_encoder_fsm,
+	%(NAME)s_cha_active,
+	%(NAME)s_chb_active,
+	%(NAME)s_fw_detected,
+	%(NAME)s_bw_detected
+};
+// --- ME GENERATE END ---
+
+// --- ME GENERATE BUTTON ---
+uint16_t %(NAME)s_button_fsm = %(NAME)s_LVL_INITIAL;
+PLACE_TO_PGM(const me_button_t %(NAME)s_button) =
+{
+	&%(NAME)s_button_fsm,
+	%(NAME)s_LVL_INITIAL,
+	%(NAME)s_LVL_RELIABLE_PRESS,
+	%(NAME)s_LVL_RELIABLE_RELEASE,
+	%(NAME)s_LVL_MAX,
+	%(NAME)s_input_active,
+	%(NAME)s_press_detected,
+	%(NAME)s_release_detected,
+	%(NAME)s_longpress_detected,
+	%(NAME)s_longinactivity_detected
+};
+// --- ME GENERATE END ---
+
+void kbd_init(void)
+{
+// --- ME GENERATE ENCODER ---
+	%(NAME)s_encoder_init();
+// --- ME GENERATE END ---
+// --- ME GENERATE BUTTON ---
+	%(NAME)s_button_init();
+// --- ME GENERATE END ---
+}
+
+void kbd_scan(void)
+{
+// --- ME GENERATE ENCODER ---
+	encoder_scan(&%(NAME)s_encoder);
+// --- ME GENERATE END ---
+// --- ME GENERATE BUTTON ---
+	button_scan(&%(NAME)s_button);
+// --- ME GENERATE END ---
+}
+
+void encoder_scan(me_encoder_t * encoder)
+{
+	uint8_t * encoder_fsm;
+	INDIRECT_CALL(uint8_t (*cha_active)(void));
+	INDIRECT_CALL(uint8_t (*chb_active)(void));
+	INDIRECT_CALL(void (*handler)(void));
+
+	encoder_fsm = (uint8_t *)PGM_READ_PTR( &(encoder->fsm) );
+	cha_active = PGM_READ_PTR( &(encoder->cha_active) );
+	chb_active = PGM_READ_PTR( &(encoder->chb_active) );
+	handler = (void (*)(void))0;
+
+	switch( ((cha_active)()<<ENCODER_CHA_BIT) | \
+	        ((chb_active)()<<ENCODER_CHB_BIT) )
+	{
+		case CHA_ON_CHB_OFF:
+			if( *encoder_fsm == ENCODER_RESET || \
+			    *encoder_fsm == ENCODER_FW_2 )
+				*encoder_fsm = ENCODER_FW_1;
+			else if ( *encoder_fsm == ENCODER_BW_2 )
+				*encoder_fsm = ENCODER_BW_3;
+			break;
+		case CHA_ON_CHB_ON:
+			if( *encoder_fsm == ENCODER_FW_1 || \
+			    *encoder_fsm == ENCODER_FW_3 )
+				*encoder_fsm = ENCODER_FW_2;
+			else if( *encoder_fsm == ENCODER_BW_1 || \
+			         *encoder_fsm == ENCODER_BW_3 )
+				*encoder_fsm = ENCODER_BW_2;
+			break;
+		case CHA_OFF_CHB_ON:
+			if ( *encoder_fsm == ENCODER_FW_2 )
+				*encoder_fsm = ENCODER_FW_3;
+			else if( *encoder_fsm == ENCODER_RESET || \
+			         *encoder_fsm == ENCODER_BW_2 )
+				*encoder_fsm = ENCODER_BW_1;
+			break;
+		default: // including CHA_OFF_CHB_OFF
+			if ( *encoder_fsm == ENCODER_FW_3 )
+				handler = PGM_READ_PTR( &(encoder->fw_detected) );
+			else if ( *encoder_fsm == ENCODER_BW_3 )
+				handler = PGM_READ_PTR( &(encoder->bw_detected) );
+			*encoder_fsm = ENCODER_RESET;
+	}
+	if (handler != (void (*)(void))0)
+	{
+		(handler)();
+	}
+}
+
+void button_scan(me_button_t * button)
+{
+	uint16_t * button_fsm;
+	INDIRECT_CALL(void (*handler)(void));
+	INDIRECT_CALL(uint8_t (*input_active)(void));
+
+	button_fsm = (uint16_t *)PGM_READ_PTR( &(button->fsm) );
+	input_active = PGM_READ_PTR( &(button->input_active) );
+	handler = (void (*)(void))0;
+
+	if((input_active)())
+	{
+		if(*button_fsm > PGM_READ_16( &(button->lvl_reliable_release) ) )
+		{
+			// PRESS DETECTED
+			*button_fsm = PGM_READ_16( &(button->lvl_initial) ); // initial press lvl
+			handler = PGM_READ_PTR( &(button->press_detected) );
+		}
+		else
+		{
+			if (*button_fsm > 0)
+			{
+				if(*button_fsm == 1)
+				{
+					// LONGPRESS DETECTED
+					handler = PGM_READ_PTR( &(button->longpress_detected) );
+				}
+				(*button_fsm)--;
+			}
+		}
+	}
+	else
+	{
+		if(*button_fsm < PGM_READ_16( &(button->lvl_reliable_press) ) ) // reliable press lvl
+		{
+			// RELEASE DETECTED
+			*button_fsm = PGM_READ_16( &(button->lvl_initial) ); // initial release lvl
+			handler = PGM_READ_PTR( &(button->release_detected) );
+		}
+		else
+		{
+			if (*button_fsm < PGM_READ_16( &(button->lvl_max) )) // max fsm value
+			{
+				if (*button_fsm == PGM_READ_16( &(button->lvl_max) )-1) // longinactivity detect lvl
+				{
+					// LONGINACTIVITY DETECTED
+					handler = PGM_READ_PTR( &(button->longinactivity_detected) );
+				}
+				(*button_fsm)++;
+			}
+		}
+	}
+	if (handler != (void (*)(void))0)
+	{
+		(handler)();
+	}
+}
+
+
+// ====== ME FILE AUTOGEN kbd_hw.h ======
+// --- ME GENERATE ENCODER ---
+INDIRECT_CALL(uint8_t %(NAME)s_cha_active(void));
+INDIRECT_CALL(uint8_t %(NAME)s_chb_active(void));
+INDIRECT_CALL(void %(NAME)s_encoder_init(void));
+// --- ME GENERATE END ---
+
+// --- ME GENERATE BUTTON ---
+INDIRECT_CALL(uint8_t %(NAME)s_input_active(void));
+INDIRECT_CALL(void %(NAME)s_button_init(void));
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE EDITABLE kbd_hw.c ======
+#include "kbd_hw.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE ENCODER ---
+// %(NAME)s encoder functions
+INDIRECT_CALL(uint8_t %(NAME)s_cha_active(void))
+{
+	// ME USER CODE %(NAME)s encoder CHA, 1 when active
+}
+INDIRECT_CALL(uint8_t %(NAME)s_chb_active(void))
+{
+	// ME USER CODE %(NAME)s encoder CHB, 1 when active
+}
+INDIRECT_CALL(void %(NAME)s_encoder_init(void))
+{
+	// ME USER CODE %(NAME)s encoder init
+}
+// --- ME GENERATE END ---
+
+// --- ME GENERATE BUTTON ---
+// %(NAME)s button functions
+INDIRECT_CALL(uint8_t %(NAME)s_input_active(void))
+{
+	// ME USER CODE %(NAME)s button input, 1 when active
+}
+INDIRECT_CALL(void %(NAME)s_button_init(void))
+{
+	// ME USER CODE %(NAME)s button init
+}
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE AUTOGEN kbd_actions.h ======
+// --- ME GENERATE ENCODER ---
+INDIRECT_CALL(void %(NAME)s_fw_detected(void));
+INDIRECT_CALL(void %(NAME)s_bw_detected(void));
+// --- ME GENERATE END ---
+
+// --- ME GENERATE BUTTON ---
+INDIRECT_CALL(void %(NAME)s_press_detected(void));
+INDIRECT_CALL(void %(NAME)s_release_detected(void));
+INDIRECT_CALL(void %(NAME)s_longpress_detected(void));
+INDIRECT_CALL(void %(NAME)s_longinactivity_detected(void));
+// --- ME GENERATE END ---
+
+
+// ====== ME FILE EDITABLE kbd_actions.c ======
+#include "kbd_actions.h"
+// ME USER CODE user definitions and includes
+
+// --- ME GENERATE ENCODER ---
+// %(NAME)s encoder functions
+INDIRECT_CALL(void %(NAME)s_fw_detected(void))
+{
+	// ME USER CODE %(NAME)s encoder fw handler
+}
+INDIRECT_CALL(void %(NAME)s_bw_detected(void))
+{
+	// ME USER CODE %(NAME)s encoder bw handler
+}
+// --- ME GENERATE END ---
+
+// --- ME GENERATE BUTTON ---
+// %(NAME)s button functions
+INDIRECT_CALL(void %(NAME)s_press_detected(void))
+{
+	// ME USER CODE %(NAME)s button press handler
+}
+INDIRECT_CALL(void %(NAME)s_release_detected(void))
+{
+	// ME USER CODE %(NAME)s button release handler
+}
+INDIRECT_CALL(void %(NAME)s_longpress_detected(void))
+{
+	// ME USER CODE %(NAME)s button longpress handler
+}
+INDIRECT_CALL(void %(NAME)s_longinactivity_detected(void))
+{
+	// ME USER CODE %(NAME)s button longinactivity handler
+}
+// --- ME GENERATE END ---
